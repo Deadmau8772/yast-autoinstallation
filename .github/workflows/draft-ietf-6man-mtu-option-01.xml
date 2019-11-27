@@ -1,0 +1,761 @@
+<?xml version="1.0" encoding="US-ASCII"?>
+<!DOCTYPE rfc SYSTEM "rfc2629.dtd" [
+<!ENTITY rfc8201 PUBLIC "" "http://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.8201.xml">
+<!ENTITY rfc2119 PUBLIC "" "http://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.2119.xml">
+<!ENTITY rfc2460 PUBLIC "" "http://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.2460.xml">
+<!ENTITY rfc8417 PUBLIC "" "http://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.8417.xml">
+<!ENTITY rfc6438 PUBLIC "" "http://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.6438.xml">
+<!ENTITY rfc4443 PUBLIC "" "http://xml2rfc.tools.ietf.org/public/rfc/bibxml/reference.RFC.4443.xml">
+]>
+<?xml-stylesheet type="text/xsl" href="rfc2629.xslt" ?>
+<?rfc strict="yes" ?>
+<?rfc toc="yes"?>
+<?rfc tocdepth="4"?>
+<?rfc symrefs="yes"?>
+<?rfc sortrefs="yes" ?>
+<?rfc compact="yes" ?>
+<?rfc subcompact="no" ?>
+<rfc category="exp" docName="draft-ietf-6man-mtu-option-01"
+     ipr="trust200902">
+  <front>
+    <title abbrev="Path MTU Option">IPv6 Minimum Path MTU Hop-by-Hop
+    Option</title>
+
+    <author fullname="Robert M. Hinden" initials="R" surname="Hinden">
+      <organization>Check Point Software</organization>
+
+      <address>
+        <postal>
+          <street>959 Skyway Road</street>
+
+          <!-- Reorder these if your country does things differently -->
+
+          <city>San Carlos</city>
+
+          <region>CA</region>
+
+          <code>94070</code>
+
+          <country>USA</country>
+        </postal>
+
+        <phone></phone>
+
+        <facsimile></facsimile>
+
+        <email>bob.hinden@gmail.com</email>
+
+        <!-- uri and facsimile elements may also be added -->
+      </address>
+    </author>
+
+    <author fullname="Godred Fairhurst" initials="G" surname="Fairhurst">
+      <organization>University of Aberdeen</organization>
+
+     <address>
+        <postal>
+          <street>School of Engineering</street>
+
+          <street>Fraser Noble Building</street>
+
+          <city>Aberdeen</city>
+
+          <region></region>
+
+          <code>AB24 3UE</code>
+
+          <country>UK</country>
+        </postal>
+
+        <email>gorry@erg.abdn.ac.uk</email>
+      </address>
+    </author>
+
+    <date day="" month="" year="" />
+
+    <abstract>
+      <t>This document specifies a new Hop-by-Hop IPv6 option that is used to
+      record the minimum Path MTU along
+      the forward path between a source host to a destination host.
+      This collects a minimum recorded MTU along the path to
+      the destination. The value can then be communicated back to the source
+      using the return Path MTU field in the option.</t>
+
+      <t>This Hop-by-Hop option is intended to be used in environments like
+      Data Centers and on paths between Data Centers, to allow them to better
+      take advantage of paths able to support a large Path MTU.</t>
+    </abstract>
+  </front>
+
+  <middle>
+    <section anchor="Intro" title=" Introduction">
+      <t>This draft proposes a new Hop-by-Hop Option to be used to record the
+      minimum MTU along the forward path between the source and destination
+      hosts. The source host creates a packet with this Hop-by-Hop Option and
+      fills the Reported PMTU Field in the option with the value of the MTU
+      for the outbound link that will be used to forward the packet towards
+      the destination.</t>
+
+      <t>At each subsequent hop where the option is processed, the router
+      compares the value of the Reported PMTU in the option and the MTU of its
+      outgoing link. If the MTU of the outgoing link is less than the Reported
+      PMTU specified in the option, it rewrites the value in the Option Data
+      with the smaller value. When the packet arrives at the destination host,
+      the destination host can send the minimum reported PMTU value back to
+      the source host using the Return PMTU field in the option.
+      </t>
+
+      <t>The figure below can be used to illustrate the operation of the
+      method. In this case, the path between the source and destination hosts
+      comprises three links, the sender has a link MTU of size MTU-S, the link
+      between routers R1 and R2 has an MTU of size 9000 bytes, and the final
+      link to the destination has an MTU of size MTU-D.</t>
+
+      <figure>
+        <artwork align="left"><![CDATA[                 
+
+   +--------+         +----+        +----+         +-------+
+   |        |         |    |        |    |         |       |
+   | Sender +---------+ R1 +--------+ R2 +-------- + Dest. |
+   |        |         |    |        |    |         |       |
+   +--------+  MTU-S  +----+  9000B +----+  MTU-D  +-------+
+
+      ]]></artwork>
+      </figure>
+
+      <t>The scenarios are described:</t>
+
+      <t>Scenario 1, considers all links to have an 9000 byte MTU and the method
+      is supported by both routers.</t>
+
+      <t>Scenario 2, considers the link to the destination host (MTU-D)
+      to have an MTU of 1500 bytes.  This is the smallest MTU, router R2
+      resets the reported PMTU to 1500 bytes and this is detected by the
+      method. Had there been another smaller MTU at a link further along
+      the path that supports the method, the lower PMTU would also have
+      been detected.</t>
+
+      <t>Scenario 3, considers the case where the router preceding the
+      smallest link does not support the method, and the method then fails to
+      detect the actual PMTU. These scenarios are summarized in the table
+      below.
+      In this scenario, the lower PMTU would also fail to be detected had
+      PMTUD been used and an ICMPv6 PTB message had not been delivered to
+      the sender.</t>
+
+
+      <figure>
+        <artwork align="left"><![CDATA[                 
+
+   +-+-----+-----+----+----+----------+-----------------------+
+   | |MTU-S|MTU-D| R1 | R2 | Rec PMTU | Note                  |
+   +-+-----+-----+----+----+----------+-----------------------+
+   |1|9000B|9000B| H  | H  |  9000 B  | Endpoints attempt to  |
+   |       |     |    |    |          | use an 9000 B PMTU.   |
+   +-+-----+-----+----+----+----------+-----------------------+
+   |2|9000B|1500B| H  | H  |  1500 B  | Endpoints attempt to  |
+   | |     |     |    |    |          | use a 1500 B PMTU.    |
+   +-+-----+-----+----+----+----------+-----------------------+
+   |3|9000B|1500B| H  | -  |  9000 B  | Endpoints attempt to  |
+   | |     |     |    |    |          | use an 9000 B PMTU,   |
+   | |     |     |    |    |          | but need to implement |
+   | |     |     |    |    |          | a method to fall back |
+   | |     |     |    |    |          | use a 1500 B PMTU.    |
+   +-+-----+-----+----+----+----------+-----------------------+
+
+      ]]></artwork>
+      </figure>
+
+      <t>IPv6 as specified in <xref target="RFC8200"></xref> allows nodes to
+      optionally process Hop-by-Hop headers. Specifically from Section 4:</t>
+
+      <t><list style="symbols">
+          <t>The Hop-by-Hop Options header is not inserted or deleted, but may
+          be examined or processed by any node along a packet's delivery path,
+          until the packet reaches the node (or each of the set of nodes, in
+          the case of multicast) identified in the Destination Address field
+          of the IPv6 header. The Hop-by-Hop Options header, when present,
+          must immediately follow the IPv6 header. Its presence is indicated
+          by the value zero in the Next Header field of the IPv6 header.</t>
+
+          <t>NOTE: While <xref target="RFC2460"></xref> required that all
+          nodes must examine and process the Hop-by-Hop Options header, it is
+          now expected that nodes along a packet's delivery path only examine
+          and process the Hop-by-Hop Options header if explicitly configured
+          to do so.</t>
+        </list></t>
+
+      <t>The Hop-by-Hop Option defined in this document is designed to take
+      advantage of this property of how Hop-by-Hop options are processed.
+      Nodes that do not support this Option SHOULD ignore them. This can mean
+      that the value returned in the response message does not account for all
+      links along a path.</t>
+    </section>
+
+    <section anchor="motivation" title="Motivation and Problem Solved">
+
+      <t>The current state of Path MTU Discovery on the Internet is
+      problematic. The problems with the mechanisms defined in <xref
+      target="RFC8201"></xref> are known to not work well in all environments.
+      Nodes in the middle of the network may not send ICMP Packet Too Big
+      messages or they are rate limited to the point of not making them a
+      useful mechanism.</t>
+
+      <t>This results in many transport connections defaulting to 1280 bytes and makes
+      it very difficult to take advantage of links with a larger MTU where they
+      exist. Applications that need to send large packets (e.g., using UDP) are forced
+      to use IPv6 Fragmentation <xref target="RFC8200"></xref>. </t>
+
+      <t>Transport encapsulations and network-layer tunnels reduce the
+      PMTU available for a transport to use.  For example, Network
+      Virtualization Using Generic Routing Encapsulation (NVGRE) <xref
+      target="RFC7637"></xref> encapsulates L2 packets in an outer IP
+      header and does not allow IP Fragmentation.</t>
+
+      <t>The use of 10G Ethernet will not achieve it's potential because the
+      packet per second rate will exceed what most nodes can send to achieve
+      multi-gigabit rates if the packet size limited to 1280 bytes. For
+      example, the packet per second rate required to reach wire speed on a
+      10G Ethernet link with 1280 byte packets is about 977K packets per
+      second (pps), vs. 139K pps for 9000 byte packets. A significant
+      difference.</t>
+
+      <t>The purpose of the this draft is to improve the situation by defining
+      a mechanism that does not rely on nodes in the middle of the network to
+      send ICMPv6 Packet Too Big messages, instead it provides the destination
+      host information on the minimum Path MTU and it can send this
+      information back to the source host. This is expected to work better
+      than the current RFC8201 based mechanisms.</t>
+    </section>
+
+    <section title="Requirements Language">
+      <t>The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+      "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+      "OPTIONAL" in this document are to be interpreted as described in BCP 14
+      <xref target="RFC2119"></xref> <xref target="RFC8174"></xref> when, and
+      only when, they appear in all capitals, as shown here.</t>
+    </section>
+
+    <section title="Applicability Statements">
+      <t>This Hop-by-Hop Option header is intended to be used in environments
+      such as Data Centers and on paths between Data Centers, to allow them to
+      better take advantage of a path that is able to support a large PMTU.
+      For example, it helps inform a sender that the path includes links that
+      have a MTU of 9000 bytes. This has many performance advantages compared
+      to the current practice of limiting packets to 1280 bytes.</t>
+
+      <t>The design of the option is sufficiently simple that it could be
+      executed on a router's fast path. To create critical mass for this to
+      happen will have to be a strong pull from router vendors customers. This
+      could be the case for connections within and between Data Centers.</t>
+
+      <t>The method could also be useful in other environments, including the
+      general Internet.</t>
+    </section>
+
+    <section anchor="HBH" title="IPv6 Minimum Path MTU Hop-by-Hop Option">
+      <t>The Minimum Path MTU Hop-by-Hop Option has the following format:</t>
+
+     <figure>
+     <artwork align="left"><![CDATA[                 
+
+ Option    Option    Option
+  Type    Data Len   Data
++--------+--------+--------+--------+---------+-------+-+
+|BBCTTTTT|00000100|     Min-PMTU    |     Rtn-PMTU    |R|
++--------+--------+--------+--------+---------+-------+-+
+
+  Option Type:
+
+  BB     00   Skip over this option and continue processing.
+
+  C       1   Option data can change en route to the packet's final
+              destination.
+
+  TTTTT 10000 Option Type assigned from IANA [IANA-HBH].
+
+  Length:  4  The size of the each value field in Option Data 
+              field supports Path MTU values from 0 to 65,535 octets.
+
+  Min-PMTU: n 16-bits.  The minimum PMTU in octets, reflecting the
+              smallest link MTU that the packet experienced across
+              the path.  This is called the Reported PMTU.  A value
+              less than the IPv6 minimum link MTU [RFC8200]
+	      should be ignored.   
+
+  Rtn-PMTU: n 15-bits.  The returned mimimum PMTU, carrying the 15
+              most significant bits of the latest received Min-PMTU
+              field.  The value zero means that no Reported MTU is
+              being returned.
+
+  R        n  1-bit.  R-Flag.   Set by the source to signal that
+              the destination should include the received
+              Reported PMTU in Rtn-PMTU field.
+
+]]></artwork>
+      </figure>
+
+  <t>NOTE: The encoding of the final two octets (Rtn-PMTU and R-Flag)
+  could be implemented by a mask of the latest received Min-MTU value
+  with 0xFFFE, discarding the right-most bit and then performing a
+  logical 'OR' with the R-Flag value of the sender.</t>
+
+
+    </section>
+
+    <section anchor="Behaviour" title="Router, Host, and Transport Behaviors">
+      
+      <section anchor="router" title="Router Behaviour">
+        <t>Routers that do not support Hop-by-Hop options SHOULD ignore this
+        option and SHOULD forward the packet.</t>
+
+        <t>Routers that support Hop-by-Hop Options, but do not recognize this
+        option SHOULD ignore the option and SHOULD forward the packet.</t>
+
+        <t>Routers that recognize this option SHOULD compare the Reported PMTU
+        in the Min-PMTU field and the MTU configured for the outgoing
+        link. If the MTU of the outgoing link is less than the Reported PMTU,
+        the router rewrites the Reported PMTU in the Option to use the smaller
+        value.</t>
+
+	<t>The router MUST ignore and not change the Rtn-PMTU field
+	and R-Flag in the option.</t>
+
+        <t>Discussion: <list style="symbols">
+            <t>The design of this Hop-by-Hop Option makes it feasible to be
+            implemented within the fast path of a router, because the required
+            processing is simple. </t>
+          </list></t>
+      </section>
+
+      <section anchor="host" title="Host Behavior">
+
+        <t>The source host that supports this option SHOULD create a packet
+        with this Hop-by-Hop Option and fill the Min-PMTU field of the
+        option with the MTU of configured for the link over which it will send
+        the packet on the next hop towards the destination.</t>
+
+	<t>The source host may request that the destination host return the
+	received minimum MTU value by setting the R-Flag in the option.
+	This will cause the destination host to include a PMTU option in an
+	outgoing packet.</t>
+
+        <t>Discussion: <list style="symbols">
+            <t>This option does not need to be sent in all packets belonging
+            to a flow. A transport protocol (or packetization layer) can set
+            this option only on specific packets used to test the path.</t>
+
+            <t>In the case of TCP, the option could be included in packets
+            carrying a SYN segment as part of the connection set up, or can
+            periodically be sent in packets carrying other segments. Including
+            this packet in a SYN could increase the probability that SYN
+            segment is lost, when routers on the path drop packets with this
+            option. Including this option in a large packet (e.g.,
+	    greater than the present PMTU) is not likely to
+            be useful, since the large packet might itself also be dropped by
+            a link along the path with a smaller MTU, preventing the Reported
+            PMTU information from reaching the destination host.</t>
+
+            <t>The use with datagram transport protocols (e.g., UDP) is harder
+            to characterize because applications using datagram transports
+            range from very short-lived (low data-volume applications)
+            exchanges, to longer (bulk) exchanges of packets between the
+            source and destination hosts <xref target="RFC8085"></xref>.</t>
+
+            <t>For applications that use Anycast, this option should be
+            included in all packets as the actual destination will vary due to
+            the nature of Anycast.</t>
+
+            <t>Simple-exchange protocols (i.e low data-volume applications
+            <xref target="RFC8085"></xref>
+            that only send one or a few packets per transaction,
+            could be optimized by assuming that the Path MTU is symmetrical,
+            that is where the Path MTU is the same in both directions, or at
+            least not smaller in the return path. This optimisation does not
+            hold when the paths are not symmetric.</t>
+
+            <t>The use of this option with DNS and DNSSEC over UDP ought to
+            work as long as the paths are symmetric. The DNS server will learn
+            the Path MTU from the DNS query messages. If the return Path MTU
+            is smaller, then the large DNSSEC response may be dropped and the
+            known problems with PMTUD will occur. DNS and DNSSEC over
+            transport protocols that can carry the Path MTU should work.</t>
+          </list></t>
+
+<!--
+
+        <t>A Destination Host MUST NOT respond to each packet received with
+        this option, when the option also carries the same received value.
+        This requires the implementation to cache the last received value of
+        the option. This is necessary to avoid generating excessive feedback
+        traffic.  
+        </t>
+
+        <t>When a Destination Host, that supports this option, receives a
+        packet with this option, 
+	it SHOULD send a packet to the source
+        with the PMTU Option when either of these conditions is meet:
+	</t>
+
+        <t><list style="symbols">
+
+          <t>It is the first Reported PMTU value it has received
+	  from the Source.</t> 
+	  <t>The Reported PMTU value is lower than previously received.</t>
+	  <t>If the R Flag is set in the PMTU Option.</t>
+
+        </list></t>
+
+        <t>The PMTU Option sent back to the source SHOULD contain the outgoing link MTU in
+        Min-PMTU field and Received PMTU in the Rtn-PMTU field.</t>
+
+        <t>NOTE: The Received PMTU could also be reset by a timer to allow
+        periodic refresh of the state. This would also allow a sender to
+        discover cases where the Path MTU has increased (e.g., due to a
+        change in the forwarding path).</t>
+
+-->
+
+   <t> The source host can request the destination host to send a packet
+   carrying the PMTU Option  using the R-Flag.</t>
+
+  <t>A destination host SHOULD respond to each packet received with the
+  R-Flag set, by setting the PMTU Option in the next packet that it sends
+  to the source host by the same upper layer protocol instance. </t>
+
+  <t>The upper layer protocol MAY generate a packet when any of these conditions is met
+   when the R Flag is set in the PMTU Option and either:</t>
+
+  <t><list style="symbols">
+
+    <t>It is the first Reported PMTU value it has received from the source.</t>
+
+    <t>The Reported PMTU value is lower than previously received.</t>
+
+   </list></t>
+
+  <t>The R-Flag SHOULD NOT be set when the PMTU Option was sent solely
+  to carry the feedback of a Reported PMTU.</t>
+
+  <t>The PMTU Option sent back to the source SHOULD contain the outgoing
+  link MTU in Min-PMTU field and SHOULD set the last Received PMTU in the Rtn-PMTU field.
+  If these values are not present the field MUST be set to zero.</t>
+
+  <t>For a connection-oriented upper layer protocol, this could be
+  implemented by saving the value of the last received option within the
+  connection context. This last received value is then used to set the
+  return Path MTU field for all packets belonging to this flow that carry
+  the IPv6 Minimum Path MTU Hop-by-Hop Option.</t>
+
+  <t>A connection-less protocol (e.g., based on UDP), requires the
+  application to be updated to cache the Received PMTU value, and to
+  ensure that this corresponding value is used to set the last Received
+  PMTU in the Rtn-PMTU field of any PMTU Option that it sends.</t>
+
+  <t>NOTE: The Rtn-PMTU value is specific to the instance of the upper
+  layer protocol (i.e., matching the IPv6 flow ID, port-fields in UDP or
+  the SPI in IPsec, etc), not the protocol itself, because network
+  devices can make forwarding decisions that impact the PMTU based on the
+  presence and values of these upper layer fields, and therefore these
+  fields need to correspond to those of the packets for the flow received
+  by the destination host set to ensure feedback is provided to the
+  corresponding source host. </t>
+
+  <t>NOTE: An upper layer protocol that send packets from the destination
+  host towards the source host less frequently than the destination host
+  receives packets from the source host, provides less frequent feedback
+  of the received Min-PMTU value. However, it will always needs to send
+  the most recent value.</t>
+
+        <t>Discussion: <list style="symbols">
+        <t>A simple mechanism could only send an
+            MTU Option with the Rtn-PMTU field filled in
+            the first time this option is received or when the
+            Received PMTU is reduced. This is good because it limits the
+            number sent, but there is no provision for retransmission of the
+            PMTU Option fails to reach the
+            sender, or the sender looses state.</t>
+
+            <t>The Reported PMTU value could increase or decrease over time.
+            For instance, it would increase when the path changes and the
+            packets become then forwarded over a link with a MTU larger than
+            the link previously used.</t>
+          </list></t>
+      </section>
+
+      <section anchor="Transport" title="Transport Behavior">
+
+	<t>An upper layer protocol (e.g., transport endpoint) using this
+	option needs to use a method to verify the information provided
+	by this option. </t>
+
+        <t>The Received PMTU does not necessarily reflect the actual PMTU
+        between the sender and destination. Care therefore needs to be
+        exercised in using this value at the sender. Specifically:</t>
+
+        <t><list style="symbols">
+            <t>If the Received PMTU value returned by the destination is the
+            same as the initial Reported PMTU value, there could still be a
+            router or layer 2 device on the path that does not support this
+            PMTU. The usable PMTU therefore needs to be confirmed.</t>
+
+            <t>If the Received PMTU value returned by the destination is
+            smaller than the initial Reported PMTU value, this is an
+            indication that there is at least one router in the path with a
+            smaller MTU. There could still be another router or layer 2 device
+            on the path that does not support this MTU.</t>
+
+            <t>If the Received PMTU value returned by the destination is
+            larger than the initial Reported PMTU value, this may be a
+            corrupted, delayed or mis-ordered response, and SHOULD be
+            ignored.</t>
+          </list></t>
+
+        <t>A sender needs to discriminate between the Received PMTU value in a
+        PTB message generated in response to a Hop-by-Hop option requesting
+        this, and a PTB message received from a router on the path.</t>
+
+        <t>A PMTUD or PLPMTUD method could use the Received PMTU value as an
+        initial target size to probe the path. This can significantly decrease
+        the number of probe attempts (and hence time taken) to arrive at a
+        workable PMTU. It has the potential to complete discovery of the
+        correct value in a single Round Trip Time (RTT), even over paths that
+        may have successive links configured with lower MTUs.</t>
+
+        <t>Since the method can delay notification of an increase in the
+        actual PMTU, a sender with a link MTU larger than the current PMTU
+        SHOULD periodically probe for a PMTU value that is larger than the
+        Received PMTU value. This specification does not define an interval
+        for the time between probes.</t>
+
+        <t>Since the option consumes less capacity than an a full probe
+        packet, there may be advantage in using this to detect a change in the
+        path characteristics.</t>
+
+        <t>NOTE: Further details to be included in next version.</t>
+
+        <t>NOTE: A future version of the document will consider more the
+        impact of Equal Cost Multipath (ECMP) <xref
+	target="RFC6438"></xref>. Specifically, whether a 
+        Received PMTU value should be maintained by the method for each
+        transport endpoint, or for each network address, and how these are
+        best used by methods such as PLPMTUD or DPLPMTUD.</t>
+      </section>
+    </section>
+
+    <section anchor="IANA" title="IANA Considerations">
+
+   <t>No IANA actions are requested in this document.</t>
+
+   <t>Earlier IANA assigned and registered a 
+   new IPv6 Hop-by-Hop
+   Option type from the "Destination Options and Hop-by-Hop Options"
+   registry <xref target="IANA-HBH"></xref>.  This assignment is shown in <xref
+   target="HBH"></xref>.</t>
+
+    </section>
+
+    <section anchor="Security" title="Security Considerations">
+      <t>The method has no way to protect the destination from off-path attack
+      using this option in packets that do not originate from the source. This
+      attack could be used to inflate or reduce the size of the reported PMTU.
+      Mechanisms to provide this protection can be provided at a higher layer
+      (e.g., the transport packetization layer using PLPMTUD or DPLPMTUD),
+      where more information is available about the size of packet that has
+      successfully traversed a path.</t>
+
+      <t>The method solicits a response from the destination, which should be
+      used to generate a response to the IPv6 host originating the option
+      packet. A malicious attacker could generate a packet to the destination
+      for a previously inactive flow or one that advertises a change in the
+      size of the MTU for an active flow. This would create additional work at
+      the destination, and could induce creation of state when a new flow is
+      created. It could potentially result in additional traffic on the return
+      path to the sender, which could be mitigated by limiting the rate at
+      which responses are generated.</t>
+
+<!--
+      <t>A sender MUST check the quoted packet within the PTB message to
+      validate that the message is in response to a packet that was originated
+      by the sender. This is intended to provide protection against off-path
+      insertion of ICMP PTB messages by an attacker trying to disrupt the
+      service. Messages that fail this check MAY be logged, but the
+      information they contain MUST be discarded.</t>
+-->
+
+      <t>TBD</t>
+    </section>
+
+    <section anchor="Ack" title="Acknowledgments">
+
+     <t>A somewhat similar mechanism was proposed for IPv4 in 1988 in
+     <xref target="RFC1063"></xref> by Jeff Mogul, C. Kent, Craig
+     Partridge, and Keith McCloghire.  It was later obsoleted in 1990 by
+     <xref target="RFC1191"></xref> the current deployed approach to Path
+     MTU Discovery.</t>
+
+     <t>Helpful comments were received from
+     Tom Herbert,
+     Tom Jones,
+     Fred Templin,
+     Ole Troan,
+     [Your name here],
+     and other
+     members of the 6MAN working group.</t>
+
+    </section>
+
+    <section anchor="changes" title="Change log [RFC Editor: Please remove]">
+
+      <t>draft-ietf-6man-mtu-option-01, 2019-September-13</t>
+
+      <?rfc subcompact="yes" ?>
+
+      <t><list style="symbols">
+
+      <t>Changes to show IANA assigned code point.</t>
+
+      <t>Editorial changes to make text and terminology more
+      consistent.</t>
+
+      <t>Added a reference to RFC8200 in <xref
+      target="motivation"></xref> and a reference to RFC6438 in <xref
+      target="Transport"></xref>.
+      </t> 
+
+      </list></t>
+
+      <t>draft-ietf-6man-mtu-option-00, 2019-August-9</t>
+
+      <?rfc subcompact="yes" ?>
+
+      <t><list style="symbols">
+
+        <t>First 6man w.g. draft version.</t>
+
+	<t>Changes to request IANA allocation of code point.</t>
+
+         <t>Editorial changes.</t>
+      </list></t>
+      
+      <t>draft-hinden-6man-mtu-option-02, 2019-July-5</t>
+
+      <?rfc subcompact="yes" ?>
+
+      <t><list style="symbols">
+
+          <t>Changed option format to also include the Returned MTU value and
+          Return flag and made related text changes in <xref
+          target="host"></xref> to describe this behaviour.</t>
+
+	  <t>ICMP Packet Too Big messages are no longer used for feedback
+	  to the source host.</t>
+
+	  <t>Added to Acknowledgements Section that a similar mechanism was
+	  proposed for IPv4 in 1988 in <xref target="RFC1063"></xref>.</t>
+
+          <t>Editorial changes.</t>
+        </list></t>
+
+      <?rfc subcompact="no" ?>
+
+      <t>draft-hinden-6man-mtu-option-01, 2019-March-05</t>
+
+      <?rfc subcompact="yes" ?>
+
+      <t><list style="symbols">
+
+          <t>Changed requested status from Standards Track to Experimental to
+           allow use of experimental option type (11110) to allow for experimentation.
+           Removed request for IANA Option assignment.</t>
+            
+          <t>Added <xref target="motivation"></xref> "Motivation and Problem
+          Solved" section to better describe what the purpose of this document
+          is.</t>
+
+          <t>Added <xref target="exp"></xref> describing planned experiments
+          and how the results will be measured.</t>
+
+          <t>Editorial changes.</t>
+        </list></t>
+
+      <?rfc subcompact="no" ?>
+
+      <t>draft-hinden-6man-mtu-option-00, 2018-Oct-16</t>
+
+      <?rfc subcompact="yes" ?>
+
+      <t><list style="symbols">
+          <t>Initial draft.</t>
+        </list></t>
+
+      <?rfc subcompact="no" ?>
+    </section>
+  </middle>
+
+  <back>
+    <references title="Normative References">
+      <?rfc include="reference.RFC.8200" ?>
+
+      <?rfc include="reference.RFC.8201" ?>
+
+      <?rfc include="reference.RFC.2119" ?>
+
+      <?rfc include="reference.RFC.8174" ?>
+
+<!--
+      <?rfc include="reference.RFC.4443" ?>
+-->
+
+      <reference anchor="IANA-HBH"
+      target="https://www.iana.org/assignments/ipv6-parameters/ipv6-parameters.xhtml#ipv6-parameters-2">
+        <front>
+          <title>Destination Options and Hop-by-Hop Options</title>
+
+          <author></author>
+
+          <date />
+        </front>
+      </reference>
+    </references>
+
+    <references title="Informative References">
+      <?rfc include="reference.RFC.1063" ?>
+      <?rfc include="reference.RFC.1191" ?>
+
+      <?rfc include="reference.RFC.2460" ?>
+
+      <?rfc include="reference.RFC.6438" ?>
+
+      <?rfc include="reference.RFC.7637" ?>
+
+      <?rfc include="reference.RFC.8085" ?>
+
+    </references>
+
+    <section anchor="exp" title="Planned Experiments">
+      <t>TBD </t>
+
+      <t>This section will describe a set of experiments planned for the use
+      of the option defined in this document. There are many aspects of the
+      design that require experimental data or experience to evaluate this
+      experimental specification.</t>
+
+      <t>This includes experiments to understand the pathology of packets sent
+      with the specified option to determine the likelihood that they are lost
+      within specific types of network segment.</t>
+
+      <t>This includes consideration of the cost and alternatives for
+      providing the feedback required by the mechanism and how to effectively
+      limit the rate of transmission.</t>
+
+      <t>This includes consideration of the potential for integration in
+      frameworks such as that offered by DPLPMTUD.</t>
+
+      <t>There are also security-related topics to be understood as described
+      in the <xref target="Security">Security Considerations</xref>.</t>
+
+    </section>
+
+  </back>
+</rfc>
